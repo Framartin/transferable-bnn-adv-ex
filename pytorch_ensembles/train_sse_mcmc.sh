@@ -5,17 +5,18 @@ BASE_DIR=$4
 DATA_PATH=$5
 METHOD=$6
 
-if [ $3 == "SSE" ];
+if [ $METHOD == "SSE" ];
 then
   INJECT_NOISE_OR_NOT=""
   MAX_LR=0.2
   CYCLE_EPOCHS=40
   CYCLE_SAVES=1
   # save more snapshots per cycle for possible analysis
-#   CYCLE_SAVES=5
+  # CYCLE_SAVES=5
   NOISE_EPOCHS=0
   CYCLES=100
-else
+elif [ $METHOD == "cSGLD" ];
+then
 # original config:
 #  INJECT_NOISE_OR_NOT="--inject_noise"
 #  MAX_LR=0.5
@@ -23,6 +24,14 @@ else
 #  CYCLE_SAVES=3
 #  CYCLES=34
 #  NOISE_EPOCHS=3
+  INJECT_NOISE_OR_NOT="--inject_noise"
+  MAX_LR=0.5
+  CYCLE_EPOCHS=50
+  CYCLE_SAVES=3
+  CYCLES=5
+  NOISE_EPOCHS=3
+else
+  # to search for best nb of cycles and samples per cycles: 12 cycles of 62 epochs with 12 saves
   INJECT_NOISE_OR_NOT="--inject_noise"
   MAX_LR=0.5
   CYCLE_EPOCHS=62

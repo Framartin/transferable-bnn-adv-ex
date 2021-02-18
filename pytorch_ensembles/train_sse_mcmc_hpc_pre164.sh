@@ -1,7 +1,6 @@
 #!/bin/bash -l
 #SBATCH --time=1-01:30:00 # 25 hours
 #SBATCH --partition=gpu # Use the batch partition reserved for passive jobs
-#SBATCH --qos=qos-gpu
 #SBATCH -J TrainPre164      # Set the job name
 #SBATCH -N 1              # 1 computing nodes
 #SBATCH -n 1              # 1 tasks
