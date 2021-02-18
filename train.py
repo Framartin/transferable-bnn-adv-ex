@@ -20,7 +20,6 @@ cudnn.deterministic = True
 
 
 def main(args):
-    # TODO checks
     if args.pretrained and args.dataset != 'ImageNet':
         raise NotImplementedError('Pretrained only implemented for ImageNet')
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -69,7 +68,7 @@ def main(args):
             model_class = MnistFc
         elif args.dataset in ['CIFAR10', 'CIFAR100'] and args.architecture == 'LeNet':
             model_class = CifarLeNet
-        elif args.dataset in ['CIFAR10', 'CIFAR100', 'ImageNet'] and args.architecture == 'resnet50':
+        elif args.dataset in ['ImageNet'] and args.architecture == 'resnet50':
             model_class = resnet50
         elif args.dataset in ['CIFAR10'] and args.architecture in PEMODELS_NAMES:
             model_class = getattr(pemodels, args.architecture)
@@ -175,7 +174,7 @@ def main(args):
                 scheduler.step(acc_test)
             elif args.lr_decay:
                 scheduler.step()
-        # save final model and metrics
+        # save final model and df_metrics
         if not SAMPLING:
             if num_restarts == 1:
                 path_model, path_metrics = args2paths(args=args, index_model=None)

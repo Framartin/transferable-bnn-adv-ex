@@ -4,7 +4,7 @@ Implementation of the paper **[Efficient and Transferable Adversarial Examples f
 
 ## Abstract
 
-Deep neural networks are vulnerable to evasion attacks, i.e., carefully crafted examples designed to fool a model at test time. Attacks that successfully evade an ensemble of models can transfer to other independently trained models, which proves useful in black-box settings. Unfortunately, these methods involve heavy computation costs to train the models forming the ensemble. To overcome this, we propose a new method to generate transferable adversarial examples efficiently. Inspired by Bayesian deep learning, our method builds such ensembles by sampling from the posterior distribution of neural network weights during a single training process. Experiments on CIFAR-10 show that our approach improves the transfer rates significantly at equal or even lower computation costs. Intra-architecture transfer rate is increased by 23% compared to classical ensemble-based attacks, while requiring 4 times less training epochs. In the inter-architecture case, we show that we can combine our method with ensemble-based attacks to increase their transfer rate by up to 15% with constant training computational cost.
+An established way to improve the transferability of black-box evasion attacks is to craft the adversarial examples on a surrogate ensemble model. Unfortunately, such methods involve heavy computation costs to train the models forming the ensemble. Based on a state-of-the-art Bayesian Neural Network technique, we propose a new method to efficiently build such surrogates by sampling from the posterior distribution of neural network weights during a single training process. Our experiments on ImageNet and CIFAR-10 show that our approach improves the transfer rates of four state-of-the-art attacks significantly (between 2.5 and 44.4 percentage points), in both intra-architecture and inter-architecture cases. On ImageNet, our approach can reach 94% of transfer rate while reducing training time from 387 to 136 hours on our infrastructure, compared to an ensemble of independently trained DNNs. Furthermore, our approach can be combined with test-time techniques improving transferability, further increasing their effectiveness by up to 25.1 percentage points.
 
 ## Install
 
@@ -18,29 +18,29 @@ mkdir log
 
 ## Train
 
-The following code is designed to be run on a HPC with slurm to manage jobs. If `sbatch` is not available, replace it by `bash` in the following commands.
+### 1. CIFAR-10
 
+#### 1.1. Train Bayesian NN with cSGLD
 
-### 1. Train Bayesian DNN with cSGLD
-
-For every 5 architectures, train 1 SG-MCMC with cSGLD for 15 cycles of 62 epochs and 12 samples per cycle.
+For every 5 architectures, train 1 SG-MCMC with cSGLD for 5 cycles of 50 epochs and 3 samples per cycle.
 
 ```shell script
 cd pytorch_ensembles
-sbatch train_sse_mcmc_hpc.sh
-sbatch train_sse_mcmc_hpc_pre164.sh
-sbatch train_sse_mcmc_hpc_res50.sh
-sbatch train_sse_mcmc_hpc_vgg16.sh
-sbatch train_sse_mcmc_hpc_vgg19.sh
-sbatch train_sse_mcmc_hpc_wide2810.sh
+bash train_sse_mcmc_hpc.sh
+bash train_sse_mcmc_hpc_pre164.sh
+bash train_sse_mcmc_hpc_res50.sh
+bash train_sse_mcmc_hpc_vgg16.sh
+bash train_sse_mcmc_hpc_vgg19.sh
+bash train_sse_mcmc_hpc_wide2810.sh
+cd ..
 ```
 
-### 2. Train single deterministic DNN with Adam
+#### 1.2. Train single deterministic DNN with Adam
 
 For every 5 architectures, train 1 single DNN for 250 epochs.
 
 ```shell script
-sbatch run_train_dnn.sh
+bash scripts/cifar10/run_train_dnn.sh
 ```
 
 See help of `train.py` for more information:
@@ -48,15 +48,15 @@ See help of `train.py` for more information:
 python train.py --help
 ```
 
-### 3. Train Deep Ensembles with Adam
+### 1.3. Train Deep Ensembles with Adam
 
 Train independently:
 1. An ensemble of 15 deterministic DNNs with PreResNet110 architecture (250 epochs each)
-2. An ensemble of 4 deterministic DNNs for every 5 architectures architecture (250 epochs each model)
+2. An ensemble of 4 deterministic DNNs for every 5 architectures architecture (250 epochs each model) 
 
 ```shell script
-sbatch run_train_ensemble_dnn
-# copy the model trained in 2. to be used as the 4th model of each ensemble
+bash scripts/cifar10/run_train_ensemble_dnn.sh
+# copy the model trained in 1.2. to be used as the 4th model of each ensemble
 cd models/CIFAR10/PreResNet110/
 cp single_model/model_Adam_bs128_lr0.01_lrd75_psig100.0_ep250_seed100.pth dnn_ensemble/Adam_bs128_lr0.01_lrd75_psig100.0_ep250_seed1001/
 cd PreResNet164
@@ -69,102 +69,182 @@ cd ../WideResNet28x10/
 cp single_model/model_Adam_bs128_lr0.01_lrd75_psig100.0_ep250_seed104.pth dnn_ensemble/Adam_bs128_lr0.01_lrd75_psig100.0_ep250_seed1005/
 ```
 
-### 4. Train target single deterministic DNN with Adam
+### 1.4. Train target single deterministic DNN with Adam
 
-For every 5 architectures, train 1 single DNN to be used as target model. The code and hyperparameters are the same than for models train in section 2, except the random seeds.
+For every 5 architectures, train 1 single DNN to be used as target model. The code and hyperparameters are the same than for models train in section 1.2, except the random seeds.
 
 ```shell script
-sbatch run_train_target.sh
+batch run_train_target_models.sh
+```
+
+### 2. ImageNet
+
+#### 2.1. Train Bayesian NN with cSGLD on resnet-50
+
+For RQ1, train 1 resnet-50 SG-MCMC with cSGLD for 5 cycles of 45 epochs and 3 samples per cycle.
+
+```shell script
+cd pytorch_ensembles
+bash train_imagenet_csgld_resnet50.sh
+```
+
+#### 2.2. Train Bayesian NN with cSGLD on 5 archs
+
+For RQ2, train every 4 other architectures SG-MCMC with cSGLD for 3 cycles of 50 epochs and 3 samples per cycle.
+
+```shell script
+cd pytorch_ensembles
+bash train_imagenet_csgld_resnext.sh
+bash train_imagenet_csgld_densenet.sh
+bash train_imagenet_csgld_mnasnet.sh
+bash train_imagenet_csgld_efficientnet.sh
+# training can be resume if necessary (in case of nan loss):
+# bash train_imagenet_csgld_efficientnet_resume.sh
+# bash train_imagenet_csgld_efficientnet_resume1.sh
+cd ..
+```
+
+### 2.3. Retrieve and Train Deep Ensembles
+
+For RQ1, we retrieve the resnet-50 models trained independently by [pytorch-ensembles](https://github.com/bayesgroup/pytorch-ensembles).
+
+```shell script
+bash scripts/imagenet/download_pretrained.sh
+```
+
+For RQ2, we train independently 1 DNN for every 4 other architectures (135 epochs each model).
+
+```shell script
+bash scripts/imagenet/train_dnn_densenet.sh
+bash scripts/imagenet/train_dnn_efficientnet.sh
+bash scripts/imagenet/train_dnn_mnasnet.sh
+bash scripts/imagenet/train_dnn_resnext.sh
+# in RQ2, to match the nb of epochs of 3 cycles of cSGLD, we train every architecture for an additional 5 epochs
+bash scripts/imagenet/dnn_130to135epochs/train_dnn_densenet.sh
+bash scripts/imagenet/dnn_130to135epochs/train_dnn_efficientnet_resume.sh
+bash scripts/imagenet/dnn_130to135epochs/train_dnn_mnasnet.sh
+bash scripts/imagenet/dnn_130to135epochs/train_dnn_resnet50.sh
+bash scripts/imagenet/dnn_130to135epochs/train_dnn_resnext.sh
 ```
 
 ## Attack
 
-See help of `attack_csgld_pgd.py` for more information:
-```shell script
-python attack_csgld_pgd.py --help
-```
+### 1. RQ1: Intra-architecture transferability
 
-### 0. Preliminary experiments
+Compute L2 and Linf adversarial examples against the PreResNet110 cSGLD and DNNs ensembles using FG(S)M, I-FG(S)M, MI-FG(S)M and PGD (in both variants: using 1 model or every models at each iteration).
 
-To run the variants implemented in `attack_csgld.py` that experiment different ways to iterate on samples (w/wo cycle structure,
-w/wo shuffle, w/wo random init, several iteration per model vs. only 1, etc.)
-
-*Can be safely skipped:*
+Results are exported in CSV in `X_adv/CIFAR10/PreResNet110/results_same_arch.csv` and `X_adv/ImageNet/resnet50/results_same_arch.csv`. 
 
 ```shell script
-sbatch run_attack_csgld.sh
-sbatch run_attack_csgld_pgd__hp.sh
+# CIFAR
+bash scripts/cifar10/run_attack_same_arch.sh
+# ImageNet
+bash scripts/imagenet/run_attack_same_arch.sh
 ```
 
-### 1. Compute adversarial examples against cSGLD
+To compute the T-DEE, attack every ensemble from 1 DNN to 15 DNNs. 
+Results are exported in CSV in `X_adv/CIFAR10/PreResNet110/results_dee.csv` and `X_adv/ImageNet/resnet50/results_dee.csv`. 
 
-Compute:
-1. L2 and Linf adversarial examples against the PreResNet110 cSGLD
-2. for each hold-out architecture, L2 adversarial examples against all but one architectures cSGLD ensembles
+```shell script
+# CIFAR
+bash scripts/cifar10/run_attack__dee.sh
+# ImageNet
+bash scripts/imagenet/run_attack__dee.sh
+```
+
+T-DEE values are computed in `plot_metrics.py`.
+
+### 2. RQ2: Inter-architecture transferability
+
+Compute L2 and Linf I-FG(S)M for each 5 hold-out architecture. On CIFAR-10, attack the following surrogate: cSGLD (15*4 models), 1 DNN (1*4 models) and ensemble of 4 DNNs per architecture (4*4 models). On ImageNet, attack the following surrogate: cSGLD (15*4 models) and 1 DNN per architecture (1*4 models). 
+
+Results are exported in CSV in `X_adv/CIFAR10/holdout/results_holdout.csv` and `X_adv/ImageNet/holdout/results_holdout.csv`. 
 
 
 ```shell script
-sbatch run_attack_csgld_pgd__same_arch.sh
-sbatch run_attack_csgld_pgd__multiple_archs.sh
+# CIFAR
+bash scripts/cifar10/run_attack_multiple_archs.sh
+# ImageNet cSGLD
+bash scripts/imagenet/run_attack_csgld_pgd__multiple_archs.sh
+# ImageNet DNNs
+bash scripts/imagenet/run_attack_dnn__multiple_archs.sh
 ```
 
-Evaluate those adversarial examples against targeted DNNs
+### 3. RQ3: test-time transferability techniques
 
-```shell script
-sbatch run_evaluation_ensPGD_against_target.sh
-```
+Evaluate L2 and Linf I-FG(S)M with 3 test-time transferability techniques on both cSGLD and an ensemble of DNNs (1 for CIFAR, 2 for ImageNet).
 
-### 2. Compute adversarial examples against single DNNs
-
-Compute:
-1. L2 and Linf adversarial examples against the PreResNet110 DNN
-2. for each hold-out architecture, L2 adversarial examples against all but one architectures
-
-```shell script
-sbatch run_attack_ens_pgd__dnn.sh
-```
-
-Evaluate those adversarial examples against targeted DNNs
-
-```shell script
-sbatch run_evaluation_ensPGD_against_target__dnn.sh
-```
-
-### 3. Compute adversarial examples against ensembles of DNNs
-
-Compute:
-1. L2 and Linf adversarial examples against the ensemble of 15 PreResNet110 DNNs
-2. for each hold-out architecture, L2 adversarial examples against all the ensembles of 4 DNNs of all but one architectures (ensemble of 4*4 models)
+Results are exported in CSV in `X_adv/cifar10/test_techniques/results_test_techniques.csv` and `X_adv/ImageNet/test_techniques/results_test_techniques.csv`.
 
 ````shell script
-sbatch run_attack_ens_pgd__dnn_ensemble.sh
+# CIFAR
+bash scripts/cifar10/run_attack_with_test_techniques.sh
+# ImageNet 
+bash scripts/imagenet/run_attack_with_test_techniques.sh
 ````
 
-Evaluate those adversarial examples against targeted DNNs
 
-```shell script
-sbatch run_evaluation_ensPGD_against_target__dnn_ensemble.sh
-```
+### 4. RQ4: Hyperparameters
 
-## Hyperparameters Analysis
+Train 1 cSGLD for 20 cycles.
 
-### 1. Number of cycles
+````shell script
+bash pytorch_ensembles/train_sse_mcmc_rq_nb_cycles.sh
+````
 
-```shell script
-sbatch run_attack_csgld_pgd__nb_cycles_10K.sh
-# to craft only on 1K test examples for debug:
-# sbatch run_attack_csgld_pgd__nb_cycles.sh
-```
+Evaluate L2 and Linf I-FG(S)M on cSGLD with a number of cycles from 1 to 16 (on CIFAR-10 only).
+Results are exported in CSV in `X_adv/CIFAR10/RQ/results_nb_cycles.csv`.
 
-### 2. Number of samples per cycle
-
-```shell script
-sbatch run_attack_csgld_pgd__nb_samples_per_cycle_10K.sh
-# to craft only on 1K test examples for debug:
-# sbatch run_attack_csgld_pgd__nb_samples_per_cycle.sh
-```
-
+````shell script
+bash scripts/cifar10/run_attack__nb_cycles.sh
+````
 
 ## Attribution
 
 cSGLD models are trained thanks to the work of Ruqi Zhang et al., and Arsenii Ashukha et al. available on [GitHub](https://github.com/bayesgroup/pytorch-ensembles).
+
+
+## Supplementary Materials
+
+### Number of cSGLD samples per cycle
+
+Train 1 cSGLD for every number of cycles from 1 to 10.
+
+````shell script
+bash pytorch_ensembles/train_sse_mcmc_rq_nb_samples.sh
+````
+
+Evaluate L2 and Linf I-FG(S)M on cSGLD with a number of cycles from 1 to 16 (on CIFAR-10 only).
+Results are exported in CSV in `X_adv/CIFAR10/RQ/results_nb_samples_per_cycle_true.csv`.
+
+````shell script
+bash scripts/cifar10/run_attack__nb_samples_true.sh
+````
+
+### Number attack iterations
+
+Report transfer rates on cSGLD, 1, 2, 5 and 15 DNNs for every iteration up to 200. Computations are done for L2 and Linf norms of I-FG(S)M, MI-FG(S)M and PGD on both datasets.
+
+Results are exported in CSV in `X_adv/CIFAR10/RQ/results_nb_iters.csv` and `X_adv/ImageNet/RQ/results_nb_iters.csv`.
+
+````shell script
+bash scripts/cifar10/run_rq_nb_iters.sh
+bash scripts/imagenet/run_rq_nb_iters.sh
+````
+
+### 0-Gradient issue
+
+Analyse the proportion of gradients smaller than the eps tolerance used in ART:
+
+```shell script
+python analyse_grad.py  # for CIFAR-10
+python analyse_grad_imagenet.py  # for ImageNet
+# modify line 11-12 to target a DNN or a cSGLD sample
+```
+
+
+## Miscellaneous
+
+### Figure and Tables
+
+Figure and Tables can be reproduced with the `plot_metrics.py` script.

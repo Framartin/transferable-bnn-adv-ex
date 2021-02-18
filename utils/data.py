@@ -4,7 +4,7 @@ import torchvision
 import torchvision.datasets as datasets
 import numpy as np
 from torchvision import transforms
-from .helpers import list_models, guess_and_load_model
+from .helpers import list_models, guess_and_load_model, DEVICE
 
 
 class DataBase:
@@ -15,18 +15,24 @@ class DataBase:
     use_cuda = torch.cuda.is_available()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    def __init__(self):
-        self.min_pixel_value = 1e8
-        self.max_pixel_value = -1e8
-        for images, _ in self.testloader:
-            min_pixel = torch.min(images)
-            max_pixel = torch.max(images)
-            if min_pixel < self.min_pixel_value:
-                self.min_pixel_value = min_pixel
-            if max_pixel > self.max_pixel_value:
-                self.max_pixel_value = max_pixel
+    def __init__(self, batch_size=64, num_workers=0):
+        if hasattr(self, 'min_pixel_value') + hasattr(self, 'max_pixel_value') < 2:
+            self.min_pixel_value = 1e8
+            self.max_pixel_value = -1e8
+            for images, _ in self.testloader:
+                min_pixel = torch.min(images)
+                max_pixel = torch.max(images)
+                if min_pixel < self.min_pixel_value:
+                    self.min_pixel_value = min_pixel
+                if max_pixel > self.max_pixel_value:
+                    self.max_pixel_value = max_pixel
         self.classes = self.testset.classes
         self.num_classes = len(self.classes)
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+
+    def get_input_shape(self):
+        return tuple(self.trainset.data.shape)
 
     def to_numpy(self, train=False, N=None, seed=None):
         """
@@ -48,6 +54,44 @@ class DataBase:
         load_tmp = next(iter(loader))
         X = load_tmp[0].numpy()
         y = load_tmp[1].numpy()
+        return X, y
+
+    def correctly_predicted_to_numpy(self, model, train=False, N=None, seed=None):
+        """
+        Return the examples correcty predicted by model in the dataset as numpy arrays
+
+        :param model: pytorch model
+        :param train: bool, train or test set
+        :param N: int, max number of examples to import
+        :return: X, y: numpy arrays
+        """
+        if train:
+            set = self.trainset
+        else:
+            set = self.testset
+        if N is None:
+            N = len(set)
+        if seed:
+            torch.manual_seed(seed)
+        loader = torch.utils.data.DataLoader(set, batch_size=self.batch_size, shuffle=(train or N < len(set)))
+        X = np.zeros((N,) + self.get_input_shape()[1:], dtype='float32')
+        y = np.zeros((N,), dtype='int')
+        nb_images_saved = 0
+        for images, labels in loader:
+            images_ = images.to(DEVICE)
+            outputs = model(images_)
+            _, predicted = torch.max(outputs.data, 1)
+            predicted = predicted.cpu()
+            images_ok = images[predicted == labels,]
+            labels_ok = labels[predicted == labels,]
+            nb_images_to_append = min((predicted == labels).sum().item(), N-nb_images_saved)
+            X[nb_images_saved:(nb_images_saved+nb_images_to_append),] = images_ok[0:nb_images_to_append,].numpy()
+            y[nb_images_saved:nb_images_saved+nb_images_to_append] = labels_ok[0:nb_images_to_append].numpy()
+            nb_images_saved += nb_images_to_append
+            if nb_images_saved >= N:
+                break
+        if not (X.shape[0] == y.shape[0] == N):
+            raise RuntimeError("Array shape unexpected")
         return X, y
 
     def compute_accuracy(self, model, train=False):
@@ -96,8 +140,7 @@ class DataBase:
 class MNIST(DataBase):
     transform = transforms.Compose(
         [transforms.ToTensor(),
-         transforms.Normalize(mean=(0.,), std=(1.,))])
-         #transforms.Normalize(mean=(0.1307,), std=(0.3081,))])
+         transforms.Normalize(mean=(0.1307,), std=(0.3081,))])
 
     def __init__(self, batch_size, num_workers=0):
         self.trainset = torchvision.datasets.MNIST(root='data', train=True, download=True, transform=self.transform)
@@ -106,7 +149,7 @@ class MNIST(DataBase):
         self.testset = torchvision.datasets.MNIST(root='data', train=False, download=True, transform=self.transform)
         self.testloader = torch.utils.data.DataLoader(self.testset, batch_size=batch_size, pin_memory=self.use_cuda,
                                                       shuffle=False, num_workers=num_workers)
-        super().__init__()
+        super().__init__(batch_size=batch_size, num_workers=num_workers)
 
 
 class CIFAR10(DataBase):
@@ -132,7 +175,10 @@ class CIFAR10(DataBase):
         self.testset = torchvision.datasets.CIFAR10(root='data', train=False, download=True, transform=transform_test)
         self.testloader = torch.utils.data.DataLoader(self.testset, batch_size=batch_size, pin_memory=self.use_cuda,
                                                       shuffle=False, num_workers=num_workers)
-        super().__init__()
+        super().__init__(batch_size=batch_size, num_workers=num_workers)
+
+    def get_input_shape(self):
+        return (1, 3, 32, 32)
 
 
 class CIFAR100(DataBase):
@@ -154,12 +200,15 @@ class CIFAR100(DataBase):
         self.testset = torchvision.datasets.CIFAR100(root='data', train=False, download=True, transform=transform_test)
         self.testloader = torch.utils.data.DataLoader(self.testset, batch_size=batch_size, pin_memory=self.use_cuda,
                                                       shuffle=False, num_workers=num_workers)
-        super().__init__()
+        super().__init__(batch_size=batch_size, num_workers=num_workers)
 
 
 class ImageNet(DataBase):
 
     def __init__(self, batch_size, path='/work/projects/bigdata_sets/ImageNet/ILSVRC2012/raw-data/', num_workers=0):
+        # if DATAPATH env var is set, overright default value
+        if os.environ.get('DATAPATH', False):
+            path = os.environ.get('DATAPATH')
         # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
         #                                  std=[0.229, 0.224, 0.225])
         normalize = transforms.Normalize(mean=[0., 0., 0.],
@@ -186,4 +235,9 @@ class ImageNet(DataBase):
             self.testset,
             batch_size=batch_size, shuffle=False,
             num_workers=num_workers, pin_memory=self.use_cuda)
-        super().__init__()
+        self.min_pixel_value = 0
+        self.max_pixel_value = 1
+        super().__init__(batch_size=batch_size, num_workers=num_workers)
+
+    def get_input_shape(self):
+        return (1, 3, 224, 224)
